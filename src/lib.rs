@@ -1,7 +1,8 @@
-use serde::{Deserialize, Serialize};
-use std::fs::File;
-use std::io::{Read as IoRead, Write};
-use std::path::{Path, PathBuf};
+use serde::{Deserialize, Serialize}; // трейты serde для JSON-функций ниже
+use std::fs::File;                   // работа с файлами на диске
+use std::io::{Read as IoRead, Write}; // Read переименован, чтобы не путать с твоими будущими типами
+use std::path::{Path, PathBuf};      // Path — заимствованный путь, PathBuf — владеющий (для folder.join)
+
 
 #[derive(Debug, PartialEq)]
 pub enum Data {
@@ -15,23 +16,96 @@ pub enum Data {
     Object(Vec<(String, Data)>),
 }
 
+impl From<String> for Data {
+    fn from(value: String) -> Self {
+        Data::String(value)
+    }
+}
+
+impl From<&str> for Data {
+    fn from(value: &str) -> Self {
+        Data::String(value.to_string())
+    }
+}
+
+impl From<bool> for Data {
+    fn from(value: bool) -> Self {
+        Data::Bool(value)
+    }
+}
+
+impl From<i64> for Data {
+    fn from(value: i64) -> Self {
+        Data::Int(value)
+    }
+}
+
+impl From<i32> for Data {
+    fn from(value: i32) -> Self {
+        Data::Int(value as i64)
+    }
+}
+
+impl From<f64> for Data {
+    fn from(value: f64) -> Self {
+        Data::Float(value)
+    }
+}
+
+impl From<f32> for Data {
+    fn from(value: f32) -> Self {
+        Data::Float(value as f64)
+    }
+}
+
+impl From<Vec<u8>> for Data {
+    fn from(value: Vec<u8>) -> Self {
+        Data::Bytes(value)
+    }
+}
+
+impl<T: Into<Data>> From<Vec<T>> for Data {
+    fn from(value: Vec<T>) -> Self {
+        Data::Array(value.into_iter().map(Into::into).collect())
+    }
+}
+
 pub fn serialize_to_json<T: Serialize>(data: &T) -> Result<String, String> {
     serde_json::to_string(data).map_err(|e| e.to_string())
 }
-pub fn serialize_to_bytes<T: Serialize>(data: Data) -> Vec<u8> {
-    encode(data)
-}
-pub fn deserialize_from_bytes(data: &[u8]) -> Result<Data, String> {
-    decode(data)
-}
+
 pub fn deserialize_from_json<'a, T: Deserialize<'a>>(data: &'a str) -> Result<T, String> {
     serde_json::from_str(data).map_err(|e| e.to_string())
 }
-pub fn write(data: Vec<u8>, folder: PathBuf, file_name: String) {
-    let path = folder.join(file_name);
-    let mut file = File::create(path).unwrap();
-    file.write_all(&data).unwrap();
+
+// Сериализация в твой бинарный формат GLH.
+// T: Into<Data> — значит сюда можно передать String, &str, i32, bool, Vec<i32> и т.д. напрямую,
+// не оборачивая руками в Data:: — конверсия произойдёт сама через data.into().
+// Если нужен Data::Object — его всё равно придётся собирать руками (см. пример ниже кода).
+pub fn serialize_to_bytes<T: Into<Data>>(data: T) -> Vec<u8> {
+    encode(data.into())
 }
+
+// Обратная операция — байты GLH обратно в Data.
+pub fn deserialize_from_bytes(data: &[u8]) -> Result<Data, String> {
+    decode(data)
+}
+pub fn write<T: Into<Data>>(folder: PathBuf, file_name: String, data: T) -> Result<(), String> {
+    let path = folder.join(file_name);
+    let encoded_data = encode(data.into());
+    let mut file = File::create(path).map_err(|e| e.to_string())?;
+    file.write_all(&encoded_data).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+
+pub fn read(path: &Path) -> Result<Data, String> {
+    let mut file = File::open(path).map_err(|e| e.to_string())?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
+    decode(&buffer)
+}
+
 
 pub fn encode(data: Data) -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -41,27 +115,33 @@ pub fn encode(data: Data) -> Vec<u8> {
     bytes
 }
 
+
 fn encode_value(data: &Data, bytes: &mut Vec<u8>) {
     match data {
         Data::Null => bytes.push(0),
+
         Data::Int(value) => {
             bytes.push(1);
             bytes.extend_from_slice(&value.to_le_bytes());
         }
+
         Data::Bool(value) => {
             bytes.push(2);
             bytes.push(if *value { 1 } else { 0 });
         }
+
         Data::Float(value) => {
             bytes.push(3);
             bytes.extend_from_slice(&value.to_le_bytes());
         }
+
         Data::String(value) => {
             bytes.push(4);
             let length = value.len() as u32;
             bytes.extend_from_slice(&length.to_le_bytes());
             bytes.extend_from_slice(value.as_bytes());
         }
+
         Data::Array(value) => {
             bytes.push(5);
             let length = value.len() as u32;
@@ -70,12 +150,14 @@ fn encode_value(data: &Data, bytes: &mut Vec<u8>) {
                 encode_value(item, bytes);
             }
         }
+
         Data::Bytes(value) => {
             bytes.push(6);
             let length = value.len() as u32;
             bytes.extend_from_slice(&length.to_le_bytes());
             bytes.extend_from_slice(value);
         }
+
         Data::Object(value) => {
             bytes.push(7);
             let length = value.len() as u32;
@@ -90,37 +172,39 @@ fn encode_value(data: &Data, bytes: &mut Vec<u8>) {
     }
 }
 
+
 pub fn decode(bytes: &[u8]) -> Result<Data, String> {
     if bytes.len() < 4 || &bytes[0..3] != b"GLH" {
         return Err("invalid header: expected GLH magic bytes".to_string());
     }
-    // bytes[3] — версия формата. Пока не используется,
-    // но в будущем сюда можно завести ветвление по версии.
     let mut pos = 4;
     decode_value(bytes, &mut pos)
 }
 
+
 fn decode_value(bytes: &[u8], pos: &mut usize) -> Result<Data, String> {
-    let tag = *bytes
-        .get(*pos)
-        .ok_or("unexpected end of data: missing tag")?;
+    let tag = *bytes.get(*pos).ok_or("unexpected end of data: missing tag")?;
     *pos += 1;
 
     match tag {
         0 => Ok(Data::Null),
+
         1 => {
             let value = read_i64(bytes, pos)?;
             Ok(Data::Int(value))
         }
+
         2 => {
             let byte = *bytes.get(*pos).ok_or("unexpected eof: missing bool")?;
             *pos += 1;
             Ok(Data::Bool(byte != 0))
         }
+
         3 => {
             let value = read_f64(bytes, pos)?;
             Ok(Data::Float(value))
         }
+
         4 => {
             let length = read_u32(bytes, pos)? as usize;
             let slice = read_slice(bytes, pos, length)?;
@@ -128,6 +212,7 @@ fn decode_value(bytes: &[u8], pos: &mut usize) -> Result<Data, String> {
                 .map_err(|_| "invalid utf8 in string".to_string())?;
             Ok(Data::String(string))
         }
+
         5 => {
             let length = read_u32(bytes, pos)? as usize;
             let mut items = Vec::with_capacity(length);
@@ -136,11 +221,13 @@ fn decode_value(bytes: &[u8], pos: &mut usize) -> Result<Data, String> {
             }
             Ok(Data::Array(items))
         }
+
         6 => {
             let length = read_u32(bytes, pos)? as usize;
             let slice = read_slice(bytes, pos, length)?;
             Ok(Data::Bytes(slice.to_vec()))
         }
+
         7 => {
             let length = read_u32(bytes, pos)? as usize;
             let mut entries = Vec::with_capacity(length);
@@ -154,17 +241,16 @@ fn decode_value(bytes: &[u8], pos: &mut usize) -> Result<Data, String> {
             }
             Ok(Data::Object(entries))
         }
+
         other => Err(format!("unknown type tag: {}", other)),
     }
 }
 
-// --- маленькие хелперы для чтения примитивов из буфера ---
+
 
 fn read_slice<'a>(bytes: &'a [u8], pos: &mut usize, length: usize) -> Result<&'a [u8], String> {
     let end = pos.checked_add(length).ok_or("length overflow")?;
-    let slice = bytes
-        .get(*pos..end)
-        .ok_or("unexpected eof: slice out of range")?;
+    let slice = bytes.get(*pos..end).ok_or("unexpected eof: slice out of range")?;
     *pos = end;
     Ok(slice)
 }
@@ -184,90 +270,9 @@ fn read_f64(bytes: &[u8], pos: &mut usize) -> Result<f64, String> {
     Ok(f64::from_le_bytes(slice.try_into().unwrap()))
 }
 
-pub fn read(path: &Path) -> Result<Data, String> {
-    let mut file = File::open(path).map_err(|e| e.to_string())?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
-    decode(&buffer)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // #[test]
-    // fn test_write_complex() {
-    //     let data = Data::Object(vec![
-    //         ("id".to_string(), Data::Int(-9001)),
-    //         ("name".to_string(), Data::String("Jabbo the Glyph".to_string())),
-    //         ("active".to_string(), Data::Bool(true)),
-    //         ("score".to_string(), Data::Float(3.14159)),
-    //         ("deleted_at".to_string(), Data::Null),
-    //         (
-    //             "thumbnail".to_string(),
-    //             Data::Bytes(vec![0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0xFF]),
-    //         ),
-    //         (
-    //             "tags".to_string(),
-    //             Data::Array(vec![
-    //                 Data::String("worldbuilding".to_string()),
-    //                 Data::String("rust".to_string()),
-    //                 Data::String("tauri".to_string()),
-    //             ]),
-    //         ),
-    //         (
-    //             "stats".to_string(),
-    //             Data::Object(vec![
-    //                 ("views".to_string(), Data::Int(1200)),
-    //                 ("rating".to_string(), Data::Float(4.7)),
-    //                 (
-    //                     "history".to_string(),
-    //                     Data::Array(vec![
-    //                         Data::Object(vec![
-    //                             ("date".to_string(), Data::String("2026-01-01".to_string())),
-    //                             ("value".to_string(), Data::Int(10)),
-    //                         ]),
-    //                         Data::Object(vec![
-    //                             ("date".to_string(), Data::String("2026-02-01".to_string())),
-    //                             ("value".to_string(), Data::Int(25)),
-    //                         ]),
-    //                     ]),
-    //                 ),
-    //             ]),
-    //         ),
-    //         (
-    //             "empty_array".to_string(),
-    //             Data::Array(vec![]),
-    //         ),
-    //         (
-    //             "empty_object".to_string(),
-    //             Data::Object(vec![]),
-    //         ),
-    //         (
-    //             "nested_nulls".to_string(),
-    //             Data::Array(vec![Data::Null, Data::Null, Data::Bool(false)]),
-    //         ),
-    //     ]);
-    //
-    //     // Кодируем и пишем на диск — как в test_write
-    //     let bytes = encode(data);
-    //     write(bytes.clone());
-    //
-    //     // И сразу проверяем, что round-trip (encode -> decode) не теряет данные
-    //     let decoded = decode(&bytes).unwrap();
-    //
-    //     match decoded {
-    //         Data::Object(fields) => {
-    //             assert_eq!(fields.len(), 11);
-    //             assert_eq!(fields[0], ("id".to_string(), Data::Int(-9001)));
-    //             assert_eq!(
-    //                 fields[1],
-    //                 ("name".to_string(), Data::String("Jabbo the Glyph".to_string()))
-    //             );
-    //         }
-    //         _ => panic!("expected top-level Object"),
-    //     }
-    // }
 
     #[test]
     fn round_trip_null() {
@@ -358,7 +363,36 @@ mod tests {
     #[test]
     fn decode_rejects_truncated_data() {
         let mut bytes = encode(Data::String("hello".to_string()));
-        bytes.truncate(bytes.len() - 3); // обрезаем конец строки
+        bytes.truncate(bytes.len() - 3);
         assert!(decode(&bytes).is_err());
+    }
+
+    // --- Новые тесты на From-конверсии ---
+
+    #[test]
+    fn from_str_literal() {
+        // теперь можно закинуть просто "hello", без .to_string() и без Data::String
+        let bytes = serialize_to_bytes("hello");
+        assert_eq!(decode(&bytes).unwrap(), Data::String("hello".to_string()));
+    }
+
+    #[test]
+    fn from_i32() {
+        let bytes = serialize_to_bytes(42);
+        assert_eq!(decode(&bytes).unwrap(), Data::Int(42));
+    }
+
+    #[test]
+    fn from_vec_of_strings() {
+        // Vec<&str> -> Data::Array(Vec<Data::String>) благодаря generic-impl From<Vec<T>>
+        let bytes = serialize_to_bytes(vec!["a", "b", "c"]);
+        assert_eq!(
+            decode(&bytes).unwrap(),
+            Data::Array(vec![
+                Data::String("a".to_string()),
+                Data::String("b".to_string()),
+                Data::String("c".to_string()),
+            ])
+        );
     }
 }
