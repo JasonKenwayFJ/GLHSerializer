@@ -1,5 +1,5 @@
 [package]
-name = "GLHSerializer"
+name = "glhserializer"
 version = "0.1.0"
 edition = "2021"
 description = "Fast, compact binary serialization for structured data. Originally built for Glyph, usable anywhere."
