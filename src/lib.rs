@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read as IoRead, Write};
 use std::path::{Path, PathBuf};
@@ -14,6 +15,18 @@ pub enum Data {
     Object(Vec<(String, Data)>),
 }
 
+pub fn serialize_to_json<T: Serialize>(data: &T) -> Result<String, String> {
+    serde_json::to_string(data).map_err(|e| e.to_string())
+}
+pub fn serialize_to_bytes<T: Serialize>(data: Data) -> Vec<u8> {
+    encode(data)
+}
+pub fn deserialize_from_bytes(data: &[u8]) -> Result<Data, String> {
+    decode(data)
+}
+pub fn deserialize_from_json<'a, T: Deserialize<'a>>(data: &'a str) -> Result<T, String> {
+    serde_json::from_str(data).map_err(|e| e.to_string())
+}
 pub fn write(data: Vec<u8>, folder: PathBuf, file_name: String) {
     let path = folder.join(file_name);
     let mut file = File::create(path).unwrap();
@@ -88,7 +101,9 @@ pub fn decode(bytes: &[u8]) -> Result<Data, String> {
 }
 
 fn decode_value(bytes: &[u8], pos: &mut usize) -> Result<Data, String> {
-    let tag = *bytes.get(*pos).ok_or("unexpected end of data: missing tag")?;
+    let tag = *bytes
+        .get(*pos)
+        .ok_or("unexpected end of data: missing tag")?;
     *pos += 1;
 
     match tag {
@@ -147,7 +162,9 @@ fn decode_value(bytes: &[u8], pos: &mut usize) -> Result<Data, String> {
 
 fn read_slice<'a>(bytes: &'a [u8], pos: &mut usize, length: usize) -> Result<&'a [u8], String> {
     let end = pos.checked_add(length).ok_or("length overflow")?;
-    let slice = bytes.get(*pos..end).ok_or("unexpected eof: slice out of range")?;
+    let slice = bytes
+        .get(*pos..end)
+        .ok_or("unexpected eof: slice out of range")?;
     *pos = end;
     Ok(slice)
 }
@@ -312,7 +329,10 @@ mod tests {
         let data = Data::Object(vec![
             ("name".to_string(), Data::String("Jabbo".to_string())),
             ("age".to_string(), Data::Int(5)),
-            ("tags".to_string(), Data::Array(vec![Data::String("a".to_string())])),
+            (
+                "tags".to_string(),
+                Data::Array(vec![Data::String("a".to_string())]),
+            ),
         ]);
         let bytes = encode(data);
         let decoded = decode(&bytes).unwrap();
@@ -321,7 +341,10 @@ mod tests {
             Data::Object(vec![
                 ("name".to_string(), Data::String("Jabbo".to_string())),
                 ("age".to_string(), Data::Int(5)),
-                ("tags".to_string(), Data::Array(vec![Data::String("a".to_string())])),
+                (
+                    "tags".to_string(),
+                    Data::Array(vec![Data::String("a".to_string())])
+                ),
             ])
         );
     }

@@ -1,9 +1,15 @@
 [package]
 name = "glhserializer"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Fast, compact binary serialization for structured data. Originally built for Glyph, usable anywhere."
 license = "MIT"  # или Apache-2.0, или MIT OR Apache-2.0 — реши, что тебе ближе
 repository = "https://github.com/JasonKenwayFJ/GLHSerializer"  # если выложишь на GitHub
 readme = "readme.md"
 
+[lib]
+name = "glh"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
