@@ -1,5 +1,5 @@
 mod models;
-mod functions;
+pub mod functions;
 pub mod helpers;
 
 use serde::ser::{Serialize};
