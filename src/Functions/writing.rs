@@ -1,14 +1,40 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use serde::Serialize;
 use crate::models::data::Data;
-
 pub fn write<T: Into<Data>>(folder: PathBuf, file_name: String, data: T) -> Result<bool, String> {
     let path = folder.join(file_name).join(".glh");
     let encoded_data = encode(data.into());
     let mut file = File::create(path).map_err(|e| e.to_string())?;
     file.write_all(&encoded_data).map_err(|e| e.to_string())?;
     Ok(true)
+}
+pub fn write_typed<T: Serialize>(folder: PathBuf, file_name: String, data: &T) -> Result<(), String> {
+    let json_value = serde_json::to_value(data).map_err(|e| e.to_string())?;
+    let converted = json_to_data(json_value);
+    let path = folder.join(file_name);
+    let mut file = File::create(path).map_err(|e| e.to_string())?;
+    file.write_all(&encode(converted)).map_err(|e| e.to_string())?;
+    Ok(())
+}
+fn json_to_data(value: serde_json::Value) -> Data {
+    match value {
+        serde_json::Value::Null => Data::Null,
+        serde_json::Value::Bool(b) => Data::Bool(b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Data::Int(i)
+            } else {
+                Data::Float(n.as_f64().unwrap_or(0.0))
+            }
+        }
+        serde_json::Value::String(s) => Data::String(s),
+        serde_json::Value::Array(arr) => Data::Array(arr.into_iter().map(json_to_data).collect()),
+        serde_json::Value::Object(map) => Data::Object(
+            map.into_iter().map(|(k, v)| (k, json_to_data(v))).collect()
+        ),
+    }
 }
 pub fn serialize_to_bytes<T: Into<Data>>(data: T) -> Vec<u8> {
     encode(data.into())
