@@ -19,8 +19,8 @@ pub fn deserialize_from_json<'a, T: Deserialize<'a>>(data: &'a str) -> Result<T,
 #[cfg(test)]
 mod tests {
 
-    use crate::functions::reading::decode;
-    use crate::functions::writing::{encode, serialize_to_bytes};
+    use crate::functions::reader::decode;
+    use crate::functions::writer::{encode, serialize_to_bytes};
     use crate::models::data::Data;
 
     #[test]

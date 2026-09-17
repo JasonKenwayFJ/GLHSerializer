@@ -3,17 +3,23 @@ use std::io::Write;
 use std::path::PathBuf;
 use serde::Serialize;
 use crate::models::data::Data;
-pub fn write<T: Into<Data>>(folder: PathBuf, file_name: String, data: T) -> Result<bool, String> {
-    let path = folder.join(file_name).join(".glh");
+pub fn write<T: Into<Data>>(folder: PathBuf, file_name: String, data: T) -> Result<(), String> {
+    let mut path = folder.join(&file_name);
+    if path.extension().is_none() {
+        path.set_extension("glh");
+    }
     let encoded_data = encode(data.into());
     let mut file = File::create(path).map_err(|e| e.to_string())?;
     file.write_all(&encoded_data).map_err(|e| e.to_string())?;
-    Ok(true)
+    Ok(())
 }
 pub fn write_typed<T: Serialize>(folder: PathBuf, file_name: String, data: &T) -> Result<(), String> {
     let json_value = serde_json::to_value(data).map_err(|e| e.to_string())?;
     let converted = json_to_data(json_value);
-    let path = folder.join(file_name);
+    let mut path = folder.join(&file_name);
+    if path.extension().is_none() {
+        path.set_extension("glh");
+    }
     let mut file = File::create(path).map_err(|e| e.to_string())?;
     file.write_all(&encode(converted)).map_err(|e| e.to_string())?;
     Ok(())

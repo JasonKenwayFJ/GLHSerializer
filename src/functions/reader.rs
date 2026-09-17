@@ -3,7 +3,6 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use serde::de::DeserializeOwned;
-use serde::Serialize;
 use crate::models::data::Data;
 use crate::helpers;
 
@@ -169,7 +168,7 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
     use std::path::PathBuf;
-    use crate::functions::writing::{encode, write_typed};
+    use crate::functions::writer::{encode, write_typed};
 
     // Уникальный путь во временной папке ОС — чтобы параллельные тесты
     // не затирали файлы друг друга (у cargo test каждый тест — своя нить).
