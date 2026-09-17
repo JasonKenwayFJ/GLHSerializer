@@ -4,7 +4,7 @@ A small, self-contained binary serialization format for structured data, written
 
 GLH encodes a tagged value tree — nulls, bools, ints, floats, strings, raw bytes, arrays,
 ordered objects and hash maps — into a compact byte buffer with an 8-byte header. Originally
-built for the [Glyph](https://github.com/JasonKenwayFJ) project, but it has no dependency on it.
+built for the [Glyph](https://github.com/JasonKenwayFJ/Glyph) project, but it has no dependency on it.
 
 ```toml
 [dependencies]
