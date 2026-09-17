@@ -8,7 +8,7 @@ built for the [Glyph](https://github.com/JasonKenwayFJ/Glyph) project, but it ha
 
 ```toml
 [dependencies]
-glhserializer = "0.4"
+glhserializer = "0.5"
 ```
 
 > The crate is published as `glhserializer`, but the library target is named `glh`,
@@ -22,8 +22,8 @@ glhserializer = "0.4"
 
 ```rust
 use glh::models::data::Data;
-use glh::functions::writing::encode;
-use glh::functions::reading::decode;
+use glh::functions::writer::encode;
+use glh::functions::reader::decode;
 
 let data = Data::Object(vec![
     ("name".to_string(), Data::String("Jabbo".to_string())),
@@ -43,8 +43,8 @@ Anything that implements `serde::Serialize` / `Deserialize` can be written and r
 
 ```rust
 use std::path::{Path, PathBuf};
-use glh::functions::writing::write_typed;
-use glh::functions::reading::read;
+use glh::functions::writer::write_typed;
+use glh::functions::reader::read;
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
 struct Character {
@@ -61,7 +61,7 @@ let hero = Character {
     tags: vec!["knight".into(), "leader".into()],
 };
 
-write_typed(PathBuf::from("./saves"), "hero.glh".to_string(), &hero)?;
+write_typed(PathBuf::from("./saves"), "hero".to_string(), &hero)?;
 let restored: Character = read(Path::new("./saves/hero.glh"))?;
 
 assert_eq!(hero, restored);
@@ -71,13 +71,18 @@ Under the hood this bridges through `serde_json::Value`: your type is serialized
 the JSON tree is converted to `Data`, and `Data` is encoded to GLH bytes. Reading goes the
 other way round.
 
+> `write` and `write_typed` both append `.glh` to `file_name` automatically if it doesn't
+> already have an extension — pass a bare name like `"hero"`, or a full file name like
+> `"hero.glh"`, either works. An extension other than `.glh` (e.g. `"save.bak"`) is left
+> alone.
+
 ### Convert from primitives
 
 `Data` implements `From` for the common Rust types, so `serialize_to_bytes` accepts them
 directly:
 
 ```rust
-use glh::functions::writing::serialize_to_bytes;
+use glh::functions::writer::serialize_to_bytes;
 
 let bytes = serialize_to_bytes("hello");          // Data::String
 let bytes = serialize_to_bytes(42);               // Data::Int
@@ -100,16 +105,16 @@ Implemented conversions: `String`, `&str`, `bool`, `i32`, `i64`, `f32`, `f64`, `
 `Object` preserves key order (it is a `Vec` of pairs); `Hash` does not. Pick whichever
 matches the semantics you need.
 
-### `glh::functions::writing`
+### `glh::functions::writer`
 
 | Function | Description |
 | --- | --- |
 | `encode(data: Data) -> Vec<u8>` | Encode a value tree, header included |
 | `serialize_to_bytes<T: Into<Data>>(data: T) -> Vec<u8>` | Convert and encode in one step |
-| `write<T: Into<Data>>(folder, file_name, data) -> Result<bool, String>` | Encode and write to disk |
+| `write<T: Into<Data>>(folder, file_name, data) -> Result<(), String>` | Encode and write to disk |
 | `write_typed<T: Serialize>(folder, file_name, &data) -> Result<(), String>` | Write any serde type to disk |
 
-### `glh::functions::reading`
+### `glh::functions::reader`
 
 | Function | Description |
 | --- | --- |
@@ -180,12 +185,15 @@ tag, or invalid UTF-8 in a string or a key.
 - **`Bytes` do not survive the typed path.** `write_typed` / `read` route through JSON, and
   JSON has no byte-string type, so `Data::Bytes` becomes an array of numbers. Use `encode` /
   `decode` or `read_raw` when you need byte fidelity.
-- **Floats that are not finite become `Null`.** `data_to_json` drops `NaN` and infinities,
-  because `serde_json` cannot represent them.
+- **Floats that are not finite become `Null` on the typed path.** `data_to_json` drops `NaN`
+  and infinities silently, because `serde_json` cannot represent them — a value written as
+  `NaN` will read back as whatever your type's default for that field is (or fail to
+  deserialize, depending on the type). This only affects `write_typed` / `read`; `encode` /
+  `decode` preserve `NaN` and infinities exactly, since floats are stored as raw `f64` bits.
 - **`Object` vs `Hash`.** Encoding is identical; only the decoded Rust type differs. Choose
   `Object` if key order carries meaning.
-- **File extension.** `.glh` is the convention, but nothing in the library enforces it —
-  `write_typed` uses the file name exactly as given.
+- **File extension.** `write` and `write_typed` add `.glh` automatically if `file_name` has
+  no extension already; an existing extension (including a non-`.glh` one) is left as-is.
 
 ## Testing
 
@@ -195,7 +203,9 @@ cargo test
 
 The suite covers round-trips for every `Data` variant (including empty collections, integer
 and float boundaries, Unicode strings and deeply nested mixtures), rejection of malformed
-input, and full write-to-disk-and-read-back cycles for arbitrary serde structs.
+input, and full write-to-disk-and-read-back cycles for arbitrary serde structs — including a
+struct containing a tuple field, to confirm the JSON bridge isn't tied to any particular
+shape.
 
 ## License
 
