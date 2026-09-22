@@ -6,7 +6,7 @@ description = "Fast, compact binary serialization for structured data. Originall
 license = "MIT"
 repository = "https://github.com/JasonKenwayFJ/GLHSerializer"
 readme = "readme.md"
-
+ 
 [lib]
 name = "glh"
 

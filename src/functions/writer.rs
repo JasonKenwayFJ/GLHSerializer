@@ -13,7 +13,7 @@ pub fn write<T: Into<Data>>(folder: PathBuf, file_name: String, data: T) -> Resu
     file.write_all(&encoded_data).map_err(|e| e.to_string())?;
     Ok(())
 }
-pub fn write_typed<T: Serialize>(folder: PathBuf, file_name: String, data: &T) -> Result<(), String> {
+pub fn write_typed<T: Serialize + ?Sized>(folder: PathBuf, file_name: String, data: &T) -> Result<(), String> {
     let json_value = serde_json::to_value(data).map_err(|e| e.to_string())?;
     let converted = json_to_data(json_value);
     let mut path = folder.join(&file_name);
